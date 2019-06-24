@@ -303,6 +303,104 @@ class TcpMaster(object):
 
 
     #=============================================================================================================
+	# OPCODE 121 ALARM HISTORY
+	#=============================================================================================================
+	def opcode121(self, address, group, number, pointer, expected_length=-1):
+		data = [address, group, self._host_address, self._host_group, 121, 3, number,]
+		print pointer
+		
+		value = struct.pack('H',pointer)
+		for byte in value:
+			data.append(struct.unpack('B',byte)[0])
+		request = ""
+		for i in data:
+			request += struct.pack('B',i)
+		for i in crc.crc16(request):
+			request += struct.pack('B',i)
+		self._send(request)
+		data = self._recv()
+		dData = {'alarms':[]}
+		responsecrc = data[-2:]
+		data = data[:-2]
+		response = ""
+		
+		for i in data:
+			response += struct.pack('B',i)
+		
+		if not(crc.crc16(response) == responsecrc):
+			raise RuntimeError('CRC Error')
+		
+		if not(data[0] == self._host_address) or not(data[1] == self._host_group):
+			raise RuntimeError('Incorrect Host Address in Response')
+		
+		if not(data[2] == address) or not(data[3] == group):
+			raise RuntimeError('Incorrect Device Address in Response')
+		
+		if not(data[4] == 121) and (data[4] != 255):
+			raise RuntimeError('Incorrect OPCode in Response')
+		
+		dData['number'] = data[6]
+		if not(dData['number'] == number):
+			raise RuntimeError('Incorrect Alarms in Response')
+		
+		value = ""
+		value += struct.pack('B',data[7])
+		value += struct.pack('B',data[8])
+		dData['starting_pointer'] = struct.unpack('H',value)[0]
+		if not(dData['starting_pointer'] == pointer):
+			raise RuntimeError('Incorrect Pointer in Response')
+		
+		if (data[4] == 255):
+			raise OpcodeError(data[7], data[8],[])
+		
+		value = ""
+		value += struct.pack('B',data[9])
+		value += struct.pack('B',data[10])
+		dData['current_pointer'] = struct.unpack('H',value)[0]
+		
+		alarms = data[11:]
+		alarms = [alarms[i:i+22] for i  in range(0, len(alarms), 22)]
+		
+		aTH = ['', 'Sensor DP', 'Sensor AP', 'Sensor PT', '', 'I/O Point', 'AGA', 'User Text', 'User Value', 'MVS Sensor', 'Sensor Module', '', '', '', '', 'FST']
+		aTL = ['Alarm Clear', 'Alarm Set', 'Pulse Input Alarm Clear', 'Pulse Input Alarm Set', 'SRBX Alarm Clear', 'SRBX Alarm Set','','','']
+		
+		
+		for alarm in alarms:
+			dAlarm = {}
+			iAlarmType =  alarm[0] >> 4
+			iAlarmSet = alarm[0] & 0x0F
+			if iAlarmType in [1,2,3,5]:
+				aCode = ['Low Alarm', 'Lo Lo Alarm', 'High Alarm', ' Hi Hi Alarm', 'Rate Alarm', 'Status Change', 'A/D Failure', 'Manual Mode']
+			elif iAlarmType == 6:
+				aCode = ['Low Alarm', '', 'High Alarm', '', 'Redundant Total Count Alarm', 'Redundant FLow Alarm', 'No Flow Alarm', 'Manual Mode']
+			elif iAlarmType == 8:
+				aCode = ['Logic Alarm', '', '', '', '', '', '', '']
+			elif iAlarmType == 9:
+				aCode = ['', '', '', '', 'Input Freeze Mode', 'EIA-485 Fail Alarm', 'Sensor COmmunications Fail Alarm', 'Off Scan Mode']
+			elif iAlarmType == 10:
+				aCode = ['Sensor Out of Order', 'Phase Discrepancy Detected Alarm', 'Inconsistent Pulse Count', 'Frequency Discrepancy Alarm', 'Channel A Failure Alarm', 'Channel B Failure Alarm', '', '']
+			
+			dAlarm['type'] = aTH[iAlarmType]
+			dAlarm['set'] = aTL[iAlarmSet]
+			dAlarm['code'] = aCode[alarm[1]]
+			dAlarm['date_time'] = "20%02d-%02d-%02d %02d:%02d:%02d"%(alarm[7],alarm[6],alarm[5],alarm[4],alarm[3],alarm[2])
+			dAlarm['tag'] = ""
+			for x in range(10):
+				dAlarm['tag'] += struct.pack('B',alarm[8+x])
+			value = ''
+			value += struct.pack('B',alarm[18])
+			value += struct.pack('B',alarm[19])
+			value += struct.pack('B',alarm[20])
+			value += struct.pack('B',alarm[21])
+			aValue = struct.unpack('f',value)
+			dAlarm['value'] = str(aValue[0])
+			
+			dData['alarms'].append(dAlarm)
+		return dData
+    
+
+
+	#=============================================================================================================
 	# OPCODE 126 MINUTE HISTORY
 	#=============================================================================================================
 	def opcode126(self, address, group, point, expected_length=-1):
