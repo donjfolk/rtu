@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
+# -*- coding: utf_8 -*-
 
-import time, datetime, socket, string, struct
+import string
 
 
 #==================================================================================================
@@ -31,5 +32,4 @@ def crc16(data):
 				crc = crc >> 1
 
 	return [crc & 0xff, crc / 256]
-	#return struct.pack('H',crc)
-	#return crc
+	
