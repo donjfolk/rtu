@@ -3,7 +3,7 @@
 
 
 """
- Modbus TestKit: Implementation of Fisher ROC protocol in python
+ TestKit: Implementation of Fisher ROC protocol in python
  This is distributed under GNU LGPL license, see license.txt
 """
 
@@ -15,12 +15,20 @@ import datetime
 
 import crc
 
+
+#*************************************************************************************************************
+# 
+#*************************************************************************************************************
 class TimeoutError(Exception):
 	def __init__(self, sError):
 		self.error = sError
 	def __str__(self):
 		return repr(self.error)
 
+
+#*************************************************************************************************************
+# 
+#*************************************************************************************************************
 class OpcodeError(Exception):
 	def __init__(self, iOpcode, iErrorCode, aAdd):
 		self.opcode = iOpcode
@@ -31,9 +39,12 @@ class OpcodeError(Exception):
 			self.errocode = self.address[int(self.errocode)-1]
 		except Exception, ex:
 			pass
-		return "Opcde Error: Opcode:%s Device Parameter:%s"%(repr(self.opcode), repr(self.errocode))
+		return "Opcode Error: Opcode:%s Device Parameter:%s"%(repr(self.opcode), repr(self.errocode))
 
 
+#*************************************************************************************************************
+# TCP Master Object
+#*************************************************************************************************************
 class TcpMaster(object):
 	
 	def __init__(self, server="127.0.0.1", port=4000, host_group=3, host_address=1, timeout_in_sec=5.0):
@@ -44,9 +55,11 @@ class TcpMaster(object):
 		self._host_group = host_group
 		self._host_address = host_address
 		self.access = False
-		
+	
+	#=============================================================================================================
+	# Connect to slave device
+	#=============================================================================================================
 	def _do_open(self):
-		"""Connect to the Modbus slave"""
 		if self._sock:
 			self._sock.close()
 		self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -54,15 +67,22 @@ class TcpMaster(object):
 		self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self._sock.connect((self._server, self._port))
 
+	
+	#=============================================================================================================
+	# Close Connection
+	#=============================================================================================================
 	def _do_close(self):
-		"""Close the connection with the Modbus Slave"""
+		"""Close the connection with the Slave"""
 		if self._sock:
 			self._sock.close()
 			self._sock = None
 		return True
 	
+	
+	#=============================================================================================================
+	# Send Request to the slave
+	#=============================================================================================================
 	def _send(self, request):
-		"""Send request to the slave"""
 		try:
 			flush_socket(self._sock, 3)
 		except Exception as msg:
@@ -72,10 +92,11 @@ class TcpMaster(object):
 		print  "TX:"+" ".join("{:02x}".format(ord(c)) for c in request)
 		self._sock.send(request)
 	
+	
+	#=============================================================================================================
+	# Recieve data from slave
+	#=============================================================================================================
 	def _recv(self, expected_length=-1):
-		"""
-		Receive the response from the slave
-		"""
 		response = []
 		length = 255
 		while len(response) < length:
@@ -95,13 +116,39 @@ class TcpMaster(object):
 	
 	
 	
-	
+	#=============================================================================================================
+	# Set Timeout
+	#=============================================================================================================
 	def set_timeout(self, timeout_in_sec):
 		if self._sock:
 			self._sock.setblocking(timeout_in_sec > 0)
 			if timeout_in_sec:
 				self._sock.settimeout(timeout_in_sec)
 	
+    
+    
+    #=============================================================================================================
+	# OPCODE 17 LOGIN
+	#=============================================================================================================
+	def opcode17(self, address, group, expected_length=-1):
+		data = [address, group, self._host_address, self._host_group, 17, 5,76,79,73,03,232]
+		request = ""
+		for i in data:
+			request += struct.pack('B',i)
+		for i in crc.crc16(request):
+			request += struct.pack('B',i)
+		self._send(request)
+		data = self._recv()
+		responsecrc = data[-2:]
+		data = data[:-2]
+		response = ""
+		for i in data:
+			response += struct.pack('B',i)
+		
+		if not(crc.crc16(response) == responsecrc):
+			raise RuntimeError('CRC Error')
+    
+    
     #=============================================================================================================
 	# OPCODE 120 POINTER
 	#=============================================================================================================
@@ -133,6 +180,7 @@ class TcpMaster(object):
 		if (data[4] == 255):
 			raise OpcodeError(data[7], data[6],[])
 		return data[6:32]
+
 
     #=============================================================================================================
 	# OPCODE 126 MINUTE HISTORY
@@ -176,47 +224,21 @@ class TcpMaster(object):
 		iBit = 0
 		aHist = []
 		for i in range(60):
-		    
 		    value = ''
 		    value += struct.pack('B',hist[iBit])
 		    value += struct.pack('B',hist[iBit + 1])
 		    value += struct.pack('B',hist[iBit + 2])
 		    value += struct.pack('B',hist[iBit + 3])
 		    aValue = struct.unpack('f',value)
-		    #aHist.append(aValue[0])
 		    iBit += 4
 		    date_time = datetime.datetime(clock[0]+2000,clock[1],clock[2],iHour,i, 00)
-			
 		    if i >= iMin:
 		    	date_time = date_time - datetime.timedelta(hours=1)
 		    sTime = date_time.strftime('%Y-%m-%d %H:%M:%S')
-		    
 		    aHist.append({'date_time':sTime, 'value': aValue[0]})
-		
-		
 		return aHist
 
-    #=============================================================================================================
-	# OPCODE 17 LOGIN
-	#=============================================================================================================
-	def opcode17(self, address, group, expected_length=-1):
-		data = [address, group, self._host_address, self._host_group, 17, 5,76,79,73,03,232]
-		request = ""
-		for i in data:
-			request += struct.pack('B',i)
-		for i in crc.crc16(request):
-			request += struct.pack('B',i)
-		self._send(request)
-		data = self._recv()
-		responsecrc = data[-2:]
-		data = data[:-2]
-		response = ""
-		for i in data:
-			response += struct.pack('B',i)
-		
-		if not(crc.crc16(response) == responsecrc):
-			raise RuntimeError('CRC Error')
-	
+    
 	#=============================================================================================================
 	# OPCODE 128 Read Daily History
 	#=============================================================================================================
@@ -259,6 +281,7 @@ class TcpMaster(object):
 		aValue = struct.unpack('f',value)
 		print "Job Done Data:%s"%(",".join(map(str, aValue)))
 		return aValue
+
 		
 	#=============================================================================================================
 	# OPCODE 180 Read TLP
