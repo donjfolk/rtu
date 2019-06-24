@@ -128,6 +128,45 @@ class TcpMaster(object):
     
     
     #=============================================================================================================
+	# OPCODE 8 SET REAL TIME CLOCK
+	#=============================================================================================================
+	def opcode8(self, address, group, seconds, minutes, hours, day, month, year,expected_length=-1):
+		data = [address, group, self._host_address, self._host_group, 8, 6, seconds, minutes, hours, day, month, year]
+		request = ""
+		for i in data:
+			request += struct.pack('B',i)
+		for i in crc.crc16(request):
+			request += struct.pack('B',i)
+		self._send(request)
+		data = self._recv()
+		responsecrc = data[-2:]
+		data = data[:-2]
+		response = ""
+		for i in data:
+			response += struct.pack('B',i)
+		
+		if not(crc.crc16(response) == responsecrc):
+			raise RuntimeError('CRC Error')
+		
+		if not(data[0] == self._host_address) or not(data[1] == self._host_group):
+			raise RuntimeError('Incorrect Host Address in Response')
+		
+		if not(data[2] == address) or not(data[3] == group):
+			raise RuntimeError('Incorrect Device Address in Response')
+		
+		if not(data[4] == 8) and (data[4] != 255):
+			raise RuntimeError('Incorrect OPCode in Response')
+		
+		if (data[4] == 255):
+			raise OpcodeError(data[7], data[6],[])
+
+		if (data[5] == 0):
+			return True
+		
+		else:
+			return False
+
+	#=============================================================================================================
 	# OPCODE 17 LOGIN
 	#=============================================================================================================
 	def opcode17(self, address, group, expected_length=-1):
@@ -147,8 +186,21 @@ class TcpMaster(object):
 		
 		if not(crc.crc16(response) == responsecrc):
 			raise RuntimeError('CRC Error')
-    
-    
+		
+		if not(data[0] == self._host_address) or not(data[1] == self._host_group):
+			raise RuntimeError('Incorrect Host Address in Response')
+		
+		if not(data[2] == address) or not(data[3] == group):
+			raise RuntimeError('Incorrect Device Address in Response')
+		
+		if not(data[4] == 17) and (data[4] != 255):
+			raise RuntimeError('Incorrect OPCode in Response')
+		
+		if (data[4] == 255):
+			raise OpcodeError(data[7], data[6],[])
+
+		return data
+
     #=============================================================================================================
 	# OPCODE 120 POINTER
 	#=============================================================================================================
@@ -169,6 +221,7 @@ class TcpMaster(object):
 		
 		if not(crc.crc16(response) == responsecrc):
 			raise RuntimeError('CRC Error')
+		
 		if not(data[0] == self._host_address) or not(data[1] == self._host_group):
 			raise RuntimeError('Incorrect Host Address in Response')
 		
