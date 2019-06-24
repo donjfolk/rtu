@@ -32,14 +32,23 @@ class TimeoutError(Exception):
 class OpcodeError(Exception):
 	def __init__(self, iOpcode, iErrorCode, aAdd):
 		self.opcode = iOpcode
-		self.errocode = iErrorCode
+		self.errorcode = iErrorCode
 		self.address = aAdd
+		self.data = []
+		
 	def __str__(self):
-		try:
-			self.errocode = self.address[int(self.errocode)-1]
-		except Exception, ex:
-			pass
-		return "Opcode Error: Opcode:%s Device Parameter:%s"%(repr(self.opcode), repr(self.errocode))
+		if self.opcode == 180:
+			try:
+				for aTlp in self.address:
+					for i in aTlp:
+						self.data.append(i)
+				aTlp = []
+				for i in self.data[self.errorcode-7:self.errorcode-4]:
+					aTlp.append(str(i))
+				self.errorcode = " ".join(aTlp)
+			except Exception, ex:
+				pass
+		return "Opcode Error: Opcode:%s Device Parameter:%s"%(repr(self.opcode), repr(self.errorcode))
 
 
 #*************************************************************************************************************
@@ -158,7 +167,7 @@ class TcpMaster(object):
 			raise RuntimeError('Incorrect OPCode in Response')
 		
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],[])
+			raise OpcodeError(data[7], data[8],[])
 
 		if (data[5] == 0):
 			return True
@@ -197,7 +206,7 @@ class TcpMaster(object):
 			raise RuntimeError('Incorrect OPCode in Response')
 		
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],[])
+			raise OpcodeError(data[7], data[8],[])
 
 		return data
 
@@ -231,8 +240,66 @@ class TcpMaster(object):
 		if not(data[4] == 120) and (data[4] != 255):
 			raise RuntimeError('Incorrect OPCode in Response')
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],[])
-		return data[6:32]
+			raise OpcodeError(data[7], data[8],[])
+		dData = {}
+		
+		#Alarm Pointer
+		value = ""
+		value += struct.pack('B',data[6])
+		value += struct.pack('B',data[7])
+		dData['alarm_pointer'] = struct.unpack('H',value)[0]
+		
+		#Event Pointer
+		value = ""
+		value += struct.pack('B',data[8])
+		value += struct.pack('B',data[9])
+		dData['event_pointer'] = struct.unpack('H',value)[0]
+		
+		#Hourly Index
+		value = ""
+		value += struct.pack('B',data[10])
+		value += struct.pack('B',data[11])
+		dData['hourly_index'] = struct.unpack('H',value)[0]
+		
+		#Extended Index
+		value = ""
+		value += struct.pack('B',data[12])
+		value += struct.pack('B',data[13])
+		dData['extended_index'] = struct.unpack('H',value)[0]
+		
+		#Extended Number
+		value = ""
+		value += struct.pack('B',data[14])
+		value += struct.pack('B',data[15])
+		dData['number_extended'] = struct.unpack('H',value)[0]
+		
+		#Daily Index
+		value = ""
+		value += struct.pack('B',data[18])
+		value += struct.pack('B',data[19])
+		dData['daily_index'] = struct.unpack('H',value)[0]
+		
+		#Max Number Of Alarms (Normally 240)
+		value = ""
+		value += struct.pack('B',data[22])
+		value += struct.pack('B',data[23])
+		dData['max_alarms'] = struct.unpack('H',value)[0]
+		
+		#Max Number Of Events (Normally 240)
+		value = ""
+		value += struct.pack('B',data[24])
+		value += struct.pack('B',data[25])
+		dData['max_events'] = struct.unpack('H',value)[0]
+		
+		#Number of Days of Daily History Logs
+		dData['days_daily'] = data[26]
+		
+		#Number of Days of Hourly History Logs
+		dData['days_hourly'] = data[27]
+		
+		#Number of Minutes of Minute History Logs
+		dData['minutes_minute'] = data[30]
+		return dData
 
 
     #=============================================================================================================
@@ -267,7 +334,7 @@ class TcpMaster(object):
 		if not(data[4] == 126) and (data[4] != 255):
 			raise RuntimeError('Incorrect OPCode in Response')
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],[])
+			raise OpcodeError(data[7], data[8],[])
 		
 		if not(data[6] == point):
 			raise RuntimeError('Incorrect Pointer in Response')
@@ -321,7 +388,7 @@ class TcpMaster(object):
 		if not(data[4] == 128) and (data[4] != 255):
 			raise RuntimeError('Incorrect OPCode in Response')
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],[])
+			raise OpcodeError(data[7], data[8],[])
 		
 		if not(data[7] == month) or not(data[8] == day):
 			raise RuntimeError('Incorrect Date in Response')
@@ -377,7 +444,7 @@ class TcpMaster(object):
 		if not(data[4] == 180) and (data[4] != 255):
 			raise RuntimeError('Incorrect OPCode in Response')
 		if (data[4] == 255):
-			raise OpcodeError(data[7], data[6],TLP)
+			raise OpcodeError(data[7], data[8],TLP)
 		
 		tlplength = data[6]
 		data = data[7:]
